@@ -1,8 +1,11 @@
 ---
-title: "Homework 5"
+title: "Homework 5 - P8105 Data Science I"
 author: "Yongyan Liu (yl6107)"
 date: "Oct 30, 2025"
-output: github_document
+output:
+  github_document:
+    toc: true
+    toc_depth: 3
 ---
 
 ```{r setup, include=FALSE}
