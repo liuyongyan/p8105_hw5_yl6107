@@ -176,6 +176,18 @@ power_results =
     avg_mu_hat = mean(mu_hat),
     avg_mu_hat_rejected = mean(mu_hat[rejected])
   )
+
+# Display results in a formatted table
+power_results %>%
+  mutate(
+    power = round(power, 4),
+    avg_mu_hat = round(avg_mu_hat, 4),
+    avg_mu_hat_rejected = round(avg_mu_hat_rejected, 4)
+  ) %>%
+  knitr::kable(
+    col.names = c("True mu", "Power", "Average mu", "Average mu (rejected)"),
+    caption = "Power Analysis Results: Effect of True μ on Power and Mean Estimates"
+  )
 ```
 
 ### Visualization 1: Power vs True mu
