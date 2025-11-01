@@ -120,7 +120,7 @@ The birthday paradox demonstrates a counterintuitive probability phenomenon. Key
 
 ## Problem 2: Power Analysis Simulation
 
-### Run simulations for different sample mean $\mu$ values
+### Run simulations for different sample mean μ values
 
 Create a function to simulate datasets and perform t-tests:
 
@@ -188,7 +188,7 @@ power_results %>%
   )
 ```
 
-### Visualization 1: Power vs True $\mu$
+### Visualization 1: Power vs True μ
 
 Plot showing the proportion of times the null was rejected:
 
@@ -217,7 +217,7 @@ ggplot(power_results, aes(x = true_mu, y = power)) +
   )
 ```
 
-### Visualization 2: Average $\mu$ vs True $\mu$
+### Visualization 2: Average μ vs True μ
 
 Plot comparing average estimate across all samples vs only rejected samples:
 
