@@ -20,7 +20,7 @@ set.seed(1)
 
 ## Problem 1: Birthday Paradox Simulation
 
-### Function to simulate birthdays
+### Run simulations
 
 Create a function that randomly assigns birthdays to n people and checks for duplicates:
 
@@ -35,8 +35,6 @@ birthday_simulation = function(n) {
   return(has_duplicate)
 }
 ```
-
-### Run simulations
 
 Run the function 10,000 times for each group size from 2 to 50:
 
@@ -122,7 +120,7 @@ The birthday paradox demonstrates a counterintuitive probability phenomenon. Key
 
 ## Problem 2: Power Analysis Simulation
 
-### Simulation function
+### Run simulations for different sample mean $\mu$ values
 
 Create a function to simulate datasets and perform t-tests:
 
@@ -144,9 +142,7 @@ sim_t_test = function(n = 30, mu = 0, sigma = 5) {
 }
 ```
 
-### Run simulations for different sample mean $\mu$ values
-
-Repeat for $\mu$ in {0, 1, 2, 3, 4, 5, 6}:
+Repeat for $\mu$ in {0, 1, 2, ..., 6}:
 
 ```{r sim_multiple_mu}
 # Run 5000 simulations for each $\mu$ value
@@ -390,9 +386,11 @@ Run `prop.test` for each city using a tidy pipeline:
 ```{r all_cities_prop_test}
 # Run prop.test for all cities
 city_prop_tests = homicide_summary %>%
+  # the CI makes no sense if n is too small
+  filter(total_homicides >= 5) %>%
   mutate(
     prop_test_result = purrr::map2(unsolved_homicides, total_homicides,
-                                   ~prop.test(x = .x, n = .y) %>% broom::tidy())
+                                   ~prop.test(x = .x, n = .y, correct = TRUE) %>% broom::tidy())
   ) %>%
   unnest(prop_test_result) %>%
   select(city_state, estimate, conf.low, conf.high)
