@@ -12,6 +12,8 @@ output:
 library(tidyverse)
 library(ggplot2)
 library(broom)
+library(maps)
+library(ggrepel)
 
 set.seed(1)
 ```
@@ -51,17 +53,17 @@ simulation_results = tibble(
   ) %>%
   mutate(
     # Run 10,000 simulations for each group size
-    probability = map_dbl(group_size, function(n) {
+    probability = purrr::map_dbl(group_size, function(n) {
       # Run the simulation n_simulations times
       results = replicate(n_simulations, birthday_simulation(n))
       # Calculate probability as proportion of TRUE results
       mean(results)
     }),
-    
+
     # Calculate theoretical probability using the birthday paradox formula
-    theoretical_prob = map_dbl(group_size, function(n) {
+    theoretical_prob = purrr::map_dbl(group_size, function(n) {
       if (n > 365) return(1)
-      
+
       # P(at least one match) = 1 - P(no matches)
       prob_no_match = prod((365:(365-n+1))/365)
       1 - prob_no_match
@@ -151,10 +153,10 @@ Repeat for $\mu$ in {0, 1, 2, 3, 4, 5, 6}:
 sim_results_all =
   tibble(true_mu = 0:6) %>%
   mutate(
-    sim_data = map(true_mu, function(mu) {
+    sim_data = purrr::map(true_mu, function(mu) {
       tibble(iteration = 1:5000) %>%
         mutate(
-          results = map(iteration, ~sim_t_test(n = 30, mu = mu, sigma = 5))
+          results = purrr::map(iteration, ~sim_t_test(n = 30, mu = mu, sigma = 5))
         ) %>%
         unnest(results)
     })
@@ -190,7 +192,7 @@ power_results %>%
   )
 ```
 
-### Visualization 1: Power vs True mu
+### Visualization 1: Power vs True $\mu$
 
 Plot showing the proportion of times the null was rejected:
 
@@ -219,7 +221,7 @@ ggplot(power_results, aes(x = true_mu, y = power)) +
   )
 ```
 
-### Visualization 2: Average $\mu$ vs True mu
+### Visualization 2: Average $\mu$ vs True $\mu$
 
 Plot comparing average estimate across all samples vs only rejected samples:
 
@@ -284,8 +286,220 @@ The power plot demonstrates the fundamental relationship between effect size and
 
 2. **Rejected samples only (coral line)**:
    - When $\mu$ = 0, the average $\mu$  for rejected samples is noticeably higher than 0. This makes sense: when the null is true, rejections only occur due to random chance producing extreme values.
-   - For small effect sizes (mu = 1, 2), the rejected-sample average still exceeds the true mu, showing **selection bias**: we're more likely to reject when random sampling gives us unusually large sample means.
-   - As $\mu$ increases (mu ≥ 4), the rejected-sample averages converge toward the true values because power is so high that nearly all samples lead to rejection, eliminating selection bias.
+   - For small effect sizes ($\mu$ = 1, 2), the rejected-sample average still exceeds the true mu, showing **selection bias**: we're more likely to reject when random sampling gives us unusually large sample means.
+   - As $\mu$ increases ($\mu$ ≥ 4), the rejected-sample averages converge toward the true values because power is so high that nearly all samples lead to rejection, eliminating selection bias.
 
 3. **Why rejected-sample means don't equal true $\mu$ for small effects**: When power is low, the samples that lead to rejection tend to be those with sample means inflated by sampling variability. Only samples with higher sample mean cross the significance threshold, creating upward bias in the average sample means among successful rejections.
 
+## Problem 3: Washington Post Homicides Analysis
+
+### Load and describe the data
+
+Load the homicide data from the Washington Post GitHub repository:
+
+```{r load_homicide_data}
+# Load homicide data
+homicide_data = read_csv("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv", show_col_types = FALSE)
+```
+
+**Data description:**
+
+The raw dataset contains `r nrow(homicide_data)` observations and `r ncol(homicide_data)` variables. Each row represents a single homicide case in one of 50 major U.S. cities. Key variables include:
+
+- `uid`: Unique identifier for each case
+- `reported_date`: Date the homicide was reported
+- `victim_last`, `victim_first`: Victim's name
+- `victim_race`, `victim_age`, `victim_sex`: Victim demographics
+- `city`, `state`: Location of the homicide
+- `lat`, `lon`: Geographic coordinates
+- `disposition`: Case status (e.g., "Closed without arrest", "Closed by arrest", "Open/No arrest")
+
+### Create city_state variable and summarize data
+
+Create a `city_state` variable and summarize homicides by city:
+
+```{r summarize_homicides}
+# Create city_state variable and summarize
+homicide_summary = homicide_data %>%
+  mutate(city_state = str_c(city, ", ", state)) %>%
+  group_by(city_state) %>%
+  summarize(
+    total_homicides = n(),
+    unsolved_homicides = sum(disposition %in% c("Closed without arrest", "Open/No arrest"))
+  ) %>%
+  arrange(desc(total_homicides))
+
+# Display summary - Top 10 cities by total homicides
+homicide_summary %>%
+  mutate(unsolved_rate = unsolved_homicides / total_homicides) %>%
+  head(10) %>%
+  mutate(rank = row_number()) %>%
+  select(rank, everything()) %>%
+  knitr::kable(
+    col.names = c("Rank", "City, State", "Total Homicides", "Unsolved Homicides", "Unsolved Rate"),
+    caption = "Top 10 Cities by Total Homicides",
+    digits = c(0, 0, 0, 0, 3)
+  )
+
+# Display cities with highest unsolved rates
+homicide_summary %>%
+  mutate(unsolved_rate = unsolved_homicides / total_homicides) %>%
+  arrange(desc(unsolved_rate)) %>%
+  head(10) %>%
+  mutate(rank = row_number()) %>%
+  select(rank, everything()) %>%
+  knitr::kable(
+    col.names = c("Rank", "City, State", "Total Homicides", "Unsolved Homicides", "Unsolved Rate"),
+    caption = "Top 10 Cities by Unsolved Rate",
+    digits = c(0, 0, 0, 0, 3)
+  )
+```
+
+### Proportion test for Baltimore, MD
+
+Estimate the proportion of unsolved homicides in Baltimore, MD:
+
+```{r baltimore_prop_test}
+# Extract Baltimore data
+baltimore_data = homicide_summary %>%
+  filter(city_state == "Baltimore, MD")
+
+# Run proportion test
+baltimore_test = prop.test(
+  x = baltimore_data$unsolved_homicides,
+  n = baltimore_data$total_homicides
+) %>%
+  broom::tidy()
+
+# Display results
+baltimore_test %>%
+  select(estimate, conf.low, conf.high) %>%
+  knitr::kable(
+    col.names = c("Estimated Proportion", "95% CI Lower", "95% CI Upper"),
+    caption = "Proportion of Unsolved Homicides in Baltimore, MD",
+    digits = 3
+  )
+```
+
+The estimated proportion of unsolved homicides in Baltimore, MD is `r round(baltimore_test$estimate, 3)` with a 95% confidence interval of (`r round(baltimore_test$conf.low, 3)`, `r round(baltimore_test$conf.high, 3)`).
+
+### Visualization: Proportion of unsolved homicides by city
+
+Run `prop.test` for each city using a tidy pipeline:
+
+```{r all_cities_prop_test}
+# Run prop.test for all cities
+city_prop_tests = homicide_summary %>%
+  mutate(
+    prop_test_result = purrr::map2(unsolved_homicides, total_homicides,
+                                   ~prop.test(x = .x, n = .y) %>% broom::tidy())
+  ) %>%
+  unnest(prop_test_result) %>%
+  select(city_state, estimate, conf.low, conf.high)
+```
+
+Create a plot showing estimates and confidence intervals for each city:
+
+```{r unsolved_plot, fig.width=10, fig.height=12}
+# Create plot ordered by proportion of unsolved homicides
+city_prop_tests %>%
+  mutate(city_state = fct_reorder(city_state, estimate)) %>%
+  ggplot(aes(x = city_state, y = estimate)) +
+  geom_point(color = "steelblue", size = 2) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high),
+                width = 0.3, color = "steelblue", alpha = 0.7) +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent_format(),
+                     breaks = seq(0, 1, 0.1)) +
+  labs(
+    title = "Proportion of Unsolved Homicides by City",
+    subtitle = "Error bars represent 95% confidence intervals",
+    x = "City",
+    y = "Proportion of Unsolved Homicides",
+    caption = "Data: The Washington Post"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 10, color = "gray40"),
+    axis.text.y = element_text(size = 8),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+
+### Geographic map visualization (just for fun)
+
+Create a US map showing homicides by city with size and color encoding:
+
+```{r map_visualization, echo=FALSE, fig.width=12, fig.height=8}
+# Get coordinates for each city from original data
+city_coords = homicide_data %>%
+  mutate(city_state = str_c(city, ", ", state)) %>%
+  group_by(city_state) %>%
+  summarize(
+    lat = first(lat),
+    lon = first(lon)
+  )
+
+# Join with summary data and calculate unsolved rate
+map_data_cities = homicide_summary %>%
+  left_join(city_coords, by = "city_state") %>%
+  mutate(unsolved_rate = unsolved_homicides / total_homicides)
+
+# Get US map data
+us_map = map_data("state")
+
+# Create map
+ggplot() +
+  # Draw US map
+  geom_polygon(data = us_map,
+               aes(x = long, y = lat, group = group),
+               fill = "gray95", color = "gray70", linewidth = 0.3) +
+  # Add city points
+  geom_point(data = map_data_cities,
+             aes(x = lon, y = lat,
+                 size = total_homicides,
+                 color = unsolved_rate),
+             alpha = 0.8) +
+  # Add city labels
+  geom_text_repel(data = map_data_cities,
+                  aes(x = lon, y = lat, label = city_state),
+                  size = 2.5,
+                  box.padding = 0.3,
+                  point.padding = 0.3,
+                  segment.size = 0.2,
+                  segment.color = "gray50",
+                  max.overlaps = 50,
+                  min.segment.length = 0) +
+  scale_size_continuous(
+    name = "Total Homicides",
+    range = c(3, 18),
+    breaks = c(500, 1000, 2000, 3000),
+    labels = scales::comma
+  ) +
+  scale_color_gradientn(
+    name = "Unsolved Rate",
+    colors = c("#FFF7BC", "#FEE391", "#FEC44F", "#FB9A29", "#EC7014", "#CC4C02", "#8C2D04"),
+    labels = scales::percent_format(),
+    limits = c(0.25, 0.75)
+  ) +
+  coord_map("albers", lat0 = 30, lat1 = 40) +
+  labs(
+    title = "Homicides Across Major U.S. Cities",
+    subtitle = "Point size represents total homicides; color represents proportion unsolved",
+    caption = "Data: The Washington Post"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    plot.subtitle = element_text(size = 11, color = "gray40", hjust = 0.5),
+    plot.caption = element_text(size = 9, color = "gray60"),
+    legend.position = "right",
+    plot.margin = margin(10, 10, 10, 10)
+  )
+```
+
+**Key observations:**
+
+Unsolved homicide rates vary dramatically (25-75%) across cities. Chicago, New Orleans, and Baltimore show highest unsolved rates, while Richmond and Charlotte show lowest. Larger cities tend to have both more total homicides and higher unsolved rates. Geographic patterns show variation across all regions without clear coastal-interior distinctions.
